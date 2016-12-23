@@ -9,7 +9,7 @@
 #include <string>
 
 
-using namespace std;
+using namespace std; //Comment here
 // random generator function:
 int myrandom(int i) { return  rand() % i; }
 void createvector(int d, unordered_map<char, vector<int>> &m);
