@@ -9,18 +9,19 @@
 #include <string>
 
 
+
 using namespace std;
 // random generator function:
 int myrandom(int i) { return  rand() % i; }
 void createvector(int d, unordered_map<char, vector<int>> &m);
-
+/*
 int main() {
 	unordered_map<char, vector<int>> m; //map with alphabets as key and vector of size d as value
-	int d = 20;
+	int d = 100000;
 
 	createvector(d, m);
 
-
+	
 
 	string line;
 	string dir = "C:\\Users\\poorn\\Documents\\Visual Studio 2015\\Projects\\OpenCLProject3\\Files\\test\\";
@@ -57,80 +58,49 @@ int main() {
 
 	else cout << "Unable to open file";
 
-
 	getchar();
 	return 0;
 }
-
-
-
-
-
-
-/*
-
-// reading training data from a list text file
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <vector>       // std::vector
-using namespace std;
-
-int main() {
-
-
-	string line;
-	string dir = "C:\\Users\\poorn\\Documents\\Visual Studio 2015\\Projects\\OpenCLProject3\\Files\\test\\";
-	vector<string> trainingfile;
-	ifstream myfile(dir+"list1.txt");
-	int index = 0;
-	if (myfile.is_open())
-	{
-		while (getline(myfile, line))
-		{
-			//cout << line << '\n';
-			//trainingfile.push_back(line);
-			
-			char c;
-			ifstream tfile(dir + line);
-			cout << "opening the file : " << line << '\n';
-			if (tfile.is_open())
-			{
-
-				while (tfile.good())//(getline(tfile, line))
-				{
-					tfile.get(c);
-					cout << c << '\n';
-
-				}
-				tfile.close();
-			}
-
-			//cout << trainingfile.at(index) << '\n';
-			//index++;
-		}
-		myfile.close();
-	}
-
-	else cout << "Unable to open file";
-
-	getchar();
-	return 0;
-}
-
-
-
-
-
-
 */
 
+void createvector(int d, unordered_map<char, vector<int>>& m) 
+{
+	srand(unsigned(time(0))); // This will ensure randomized number by help of time.
+
+	vector<int> dvector;
+	char alph[27] = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ' ' };
+
+	for (int i = 0; i < d / 2; i++) {
+		dvector.push_back(1);
+	}
+
+	for (int i = d / 2; i < d; i++) {
+		dvector.push_back(-1);
+	}
+
+	for (int j = 0; j < 27; j++) {
+
+		random_shuffle(dvector.begin(), dvector.end()); //Shuffling
+
+		random_shuffle(dvector.begin(), dvector.end(), myrandom); //test if necessary
+
+		m[alph[j]] = dvector;
+
+		/* for dispaying the 
+		cout << "m[" << alph[j] << "] = ";
+		for (std::vector<int>::const_iterator i = dvector.begin(); i != dvector.end(); ++i)
+		std::cout << *i << ' ';
+
+		cout << '\n';
+		*/
+	}
+}
 
 
 
 
 
-/*
+
 
 // This program implements a vector addition using OpenCL
 // System includes
@@ -149,16 +119,27 @@ const char* programSource =
 ;
 int main() {
 	// This code executes on the OpenCL host
+	
+	unordered_map<char, vector<int>> m; //map with alphabets as key and vector of size d as value
+	int d = 100000;
+	createvector(d, m);
+	
+	const int Ngram = 3;
+	char trainbuffer[] = "this is a test to check the file read and process" ;
+
+
+
+
 	// Host data
-
-
 	int *A = NULL; // Input array
 	int *B = NULL; // Input array
 	int *C = NULL; // Output array
 				   // Elements in each array
 	const int elements = 10000;
 	// Compute the size of the data
-	size_t datasize = sizeof(int)*elements;
+	//size_t datasize = sizeof(int)*elements;
+	size_t datasize = sizeof(int)*d;
+
 	// Allocate space for input/output data
 	A = (int*)malloc(datasize);
 	B = (int*)malloc(datasize);
@@ -177,7 +158,7 @@ int main() {
 	//———————————————————————————————————————————————————
 	cl_uint numPlatforms = 0;
 	cl_platform_id *platforms = NULL;
-	// Use clGetPlatformIDs() to retrieve the number of
+	// Use clGetPlatformIDs () to retrieve the number of
 	// platforms
 	status = clGetPlatformIDs(0, NULL, &numPlatforms);
 	// Allocate enough space for each platform
@@ -241,6 +222,21 @@ int main() {
 	//———————————————————————————————————————————————————
 	// STEP 5: Create device buffers
 	//———————————————————————————————————————————————————
+	
+	//Proj update
+	cl_mem buffarray[Ngram];
+
+	for (int i = 0;i<Ngram;i++)
+	{
+		buffarray[i] = clCreateBuffer(
+			context,
+			CL_MEM_READ_ONLY,
+			datasize,
+			NULL,
+			&status);
+
+	}
+
 
 
 	cl_mem bufferA; // Input array on the device
@@ -275,6 +271,26 @@ int main() {
 	//———————————————————————————————————————————————————
 	// Use clEnqueueWriteBuffer() to write input array A to
 	// the device buffer bufferA
+
+
+	//Proj update
+	for (int i = 0;i < Ngram;i++) {
+		status = clEnqueueWriteBuffer(
+			cmdQueue,
+			buffarray[i],
+			CL_FALSE,
+			0,
+			datasize,
+			A, //check
+			0,
+			NULL,
+			NULL);
+
+	}
+
+
+
+
 	status = clEnqueueWriteBuffer(
 		cmdQueue,
 		bufferA,
@@ -289,8 +305,6 @@ int main() {
 	// the device buffer bufferB
 	status = clEnqueueWriteBuffer(
 		cmdQueue,
-
-
 		bufferB,
 		CL_FALSE,
 		0,
@@ -334,8 +348,6 @@ int main() {
 	status = clSetKernelArg(
 		kernel,
 		0,
-
-
 		sizeof(cl_mem),
 		&bufferA);
 	status = clSetKernelArg(
@@ -404,10 +416,7 @@ int main() {
 	}
 	if (result) {
 		printf("Output for addition is correct\n");
-		printf(" ");
-		printf(" ");
-		printf(" ");
-		printf(" ");
+
 		getchar();
 	}
 	else {
@@ -430,36 +439,4 @@ int main() {
 	free(C);
 	free(platforms);
 	free(devices);
-}*/
-
-void createvector(int d, unordered_map<char, vector<int>>& m)
-{
-	srand(unsigned(time(0))); // This will ensure randomized number by help of time.
-
-	vector<int> dvector;
-	char alph[27] = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ' ' };
-
-	for (int i = 0; i < d / 2; i++) {
-		dvector.push_back(1);
-	}
-
-	for (int i = d / 2; i < d; i++) {
-		dvector.push_back(-1);
-	}
-
-	for (int j = 0; j < 27; j++) {
-
-		random_shuffle(dvector.begin(), dvector.end()); //Shuffling
-
-		random_shuffle(dvector.begin(), dvector.end(), myrandom); //test if necessary
-
-		m[alph[j]] = dvector;
-
-		cout << "m[" << alph[j] << "] = ";
-		for (std::vector<int>::const_iterator i = dvector.begin(); i != dvector.end(); ++i)
-			std::cout << *i << ' ';
-
-		cout << '\n';
-
-	}
 }
