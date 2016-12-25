@@ -7,13 +7,19 @@
 #include <unordered_map>
 #include <fstream>
 #include <string>
-#include <OpenCL/OpenCL.h>
 #include "kernal.h"
+
+#ifdef TARGET_OS_WIN32
+#include <CL/cl.h>
+#else
+#include <OpenCL/OpenCL.h>
+#endif
 
 using namespace std;
 
-#define PRINT_ITEM_MEMORY       0;                      //Prints item memory if 1
-#define GENERATE_TRAINING_DATA  0;                      //Creates Associative memory if 1
+//#define PRINT_ITEM_MEMORY;                            //Prints item memory if 1
+//#define GENERATE_TRAINING_DATA;                       //Creates Associative memory if 1
+//#define SPLIT_BY_SPACE;                               //Split input by space instead of using NGRAMS
 
 const int       DIMEN       = 1000;                     //Vector dimension
 const int       NGRAM       = 2;                        //Ngram-characters read from the training and test files
@@ -21,47 +27,91 @@ const size_t    DATASIZE    = sizeof(int) * DIMEN;
 const string    BASE_DIR    = "C:\\Users\\poorn\\Documents\\Visual Studio 2015\\Projects\\OpenCLProject3\\Files\\test\\";
 const string    TRAIN_FILE  = "list1.txt";
 const string    TEST_FILE   = "";
+const char *    KERNAL_NAME = "abcde";
 
 int     *out = NULL;
-int     *items[NGRAM];
+int     *items;
 string  news_type;
+size_t globalWorkSize[1];
 
-unordered_map<char, vector<int>>    ITEM_MEMORY;        //map with alphabets as key and vector of size d as value
-unordered_map<string, vector<int>>  ASSOCIATIVE_MEMORY;
-
-
+unordered_map<char,     vector<int>>    ITEM_MEMORY;        //map with alphabets as key and vector of size d as value
+unordered_map<string,   vector<int>>    ASSOCIATIVE_MEMORY;
 
 /** OpenCL parameter initializations -- BEGIN **/
-/**/
-/**/ // Use this to check the output of each API call
 /**/ cl_int status;
-/**/
 /**/ cl_uint numPlatforms = 0;
 /**/ cl_platform_id *platforms = NULL;
-/**/
 /**/ cl_uint numDevices = 0;
 /**/ cl_device_id *devices = NULL;
-/**/
 /**/ cl_context context = NULL;
-/**/
 /**/ cl_command_queue cmdQueue;
-/**/
-/**/ cl_mem buffer[NGRAM]; // Input array on the device
-/**/ cl_mem bufferOut; // Output array on the device
-/**/
+/**/ cl_mem buffer;
+/**/ cl_mem bufferOut;
 /**/ cl_program program;
 /**/ cl_kernel kernel = NULL;
-/**/
-/**/
 /** OpenCL parameter initializations -- END **/
 
 
-// random generator function:
-int myrandom(int i)
+/** Function Declarations -- BEGIN **/
+void generateItemMemory();
+int myrandom(int i);
+void initializeAssociativeMemory();
+void kernalInitialize();
+void processFile(string filename);
+vector<string> ReadFile(string filename);
+void loadKernalBuffer_Ngram(string data);
+void loadKernalBuffer_space(string str);
+void writeDataIntoBuffer();
+void runKernal();
+void addToAssociativeMemory();
+void releaseMemory();
+/** Function Declarations -- END **/
+
+
+int main()
 {
-    return  rand() % i;
+    generateItemMemory();
+    initializeAssociativeMemory();
+    kernalInitialize();
+    //processFile(TRAIN_FILE);
+    
+    
+#ifdef GENERATE_TRAINING_DATA
+    string line;
+    vector<string> trainingfile;
+    ifstream listfile(BASE_DIR + TRAIN_FILE);
+    //int index = 0;
+    if (listfile.is_open())
+    {
+        while (getline(listfile, line))
+        {
+            //cout << line << '\n';
+            //trainingfile.push_back(line);
+            char c;
+            ifstream tfile(BASE_DIR + line);
+            cout << "opening the file : " << line << '\n';
+            if (tfile.is_open())
+            {
+                while (tfile.good())//(getline(tfile, line))
+                {
+                    tfile.get(c);
+                    cout << c << '\n';
+                }
+                tfile.close();
+            }
+            //cout << trainingfile.at(index) << '\n';
+            //index++;
+        }
+        listfile.close();
+    }
+    else cout << "Unable to open file";
+#endif
+    
+    getchar();
+    return 0;
 }
 
+/********************************************************************************************************************/
 void generateItemMemory()
 {
     srand(unsigned(time(0)));                           //This will ensure randomized number by help of time.
@@ -84,12 +134,11 @@ void generateItemMemory()
     for (int j = 0; j < 27; j++)
     {
         random_shuffle(dvector.begin(), dvector.end()); //Shuffles the vector to rearrange the 1s and -1s
-        
         random_shuffle(dvector.begin(), dvector.end(),  //Reshuffling the vector by feeding random index postions
                        myrandom);                       //to make sure ITEM_MEMORY is unique
         
-        ITEM_MEMORY[alph[j]] = dvector;                 //Fills the ITEM_MEMORY
-
+        ITEM_MEMORY[alph[j]] = dvector;                 //Fill the ITEM_MEMORY
+        
 #ifdef PRINT_ITEM_MEMORY
         cout << "ITEM_MEMORY[" << alph[j] << "] = ";
         for (std::vector<int>::const_iterator i = dvector.begin(); i != dvector.end(); ++i)
@@ -99,252 +148,235 @@ void generateItemMemory()
     }
 }
 
-
-int main() {
-    generateItemMemory();
-    
-#ifdef GENERATE_TRAINING_DATA
-	string line;
-	vector<string> trainingfile;
-	ifstream listfile(BASE_DIR + TRAIN_FILE);
-	//int index = 0;
-	if (listfile.is_open())
-	{
-		while (getline(listfile, line))
-		{
-			//cout << line << '\n';
-			//trainingfile.push_back(line);
-			char c;
-			ifstream tfile(BASE_DIR + line);
-			cout << "opening the file : " << line << '\n';
-			if (tfile.is_open())
-			{
-				while (tfile.good())//(getline(tfile, line))
-				{
-					tfile.get(c);
-					cout << c << '\n';
-				}
-				tfile.close();
-			}
-			//cout << trainingfile.at(index) << '\n';
-			//index++;
-		}
-		listfile.close();
-	}
-	else cout << "Unable to open file";
-#endif
-    
-	getchar();
-	return 0;
+/********************************************************************************************************************/
+int myrandom(int i)
+{
+    return  rand() % i;
 }
 
+/********************************************************************************************************************/
+void initializeAssociativeMemory()
+{
+    for(int i = 0; i < DIMEN; i++)
+        ASSOCIATIVE_MEMORY[news_type].push_back(0);
+}
 
-
-
-
-void test(){
-    
-    
+/********************************************************************************************************************/
+void kernalInitialize()
+{
     out = (int*)malloc(DATASIZE);
     
+    items = NULL;
+    items = (int*)malloc(DATASIZE*NGRAM);
     
-    for(int i=0; i < NGRAM; i++)
-    {
-        items[i] = NULL;
-        items[i] = (int*)malloc(DATASIZE);
-    }
-   
-    //Need to map items with the NGRAM item_memory to be sent to the kernal
-
-    
-    
-    
-    
-    //———————————————————————————————————————————————————
-    // STEP 1: Discover and initialize the platforms
-    //———————————————————————————————————————————————————
-    
-    // Use clGetPlatformIDs() to retrieve the number of
-    // platforms
+    //*STEP 1: Initialize the platforms
+    // Use clGetPlatformIDs() to retrieve the number of platforms
     status = clGetPlatformIDs(0, NULL, &numPlatforms);
-    
     // Allocate enough space for each platform
-    platforms =
-    (cl_platform_id*)malloc(
-                            numPlatforms * sizeof(cl_platform_id));
-    
+    platforms = (cl_platform_id*)malloc(numPlatforms * sizeof(cl_platform_id));
     // Fill in platforms with clGetPlatformIDs()
-    status = clGetPlatformIDs(numPlatforms, platforms,
-                              NULL);
+    status = clGetPlatformIDs(numPlatforms, platforms, NULL);
     
-    //———————————————————————————————————————————————————
-    // STEP 2: Discover and initialize the devices
-    //———————————————————————————————————————————————————
-    
-    
-    // Use clGetDeviceIDs() to retrieve the number of
-    // devices present
-    status = clGetDeviceIDs(
-                            platforms[0],
-                            CL_DEVICE_TYPE_ALL,
-                            0,
-                            NULL,
-                            &numDevices);
-    
+    //*STEP 2: Discover and initialize the devices
+    // Use clGetDeviceIDs() to retrieve the number of devices present
+    status = clGetDeviceIDs(platforms[0], CL_DEVICE_TYPE_ALL, 0, NULL, &numDevices);
     // Allocate enough space for each device
-    devices = (cl_device_id*)malloc(
-                          numDevices * sizeof(cl_device_id));
-    
+    devices = (cl_device_id*)malloc(numDevices * sizeof(cl_device_id));
     // Fill in devices with clGetDeviceIDs()
-    status = clGetDeviceIDs(
-                            platforms[0],
-                            CL_DEVICE_TYPE_ALL,
-                            numDevices,
-                            devices,
-                            NULL);
+    status = clGetDeviceIDs(platforms[0], CL_DEVICE_TYPE_ALL, numDevices, devices, NULL);
     
-    //———————————————————————————————————————————————————
-    // STEP 3: Create a context
-    //———————————————————————————————————————————————————
+    //*STEP 3: Create a context
+    // Create a context using clCreateContext() and associate it with the devices
+    context = clCreateContext(NULL, numDevices, devices, NULL, NULL, &status);
     
-    // Create a context using clCreateContext() and
-    // associate it with the devices
-    context = clCreateContext(
-                              NULL,
-                              numDevices,
-                              devices,
-                              NULL,
-                              NULL,
-                              &status);
+    //*STEP 4: Create a command queue
+    // Create a command queue and associate it with the device you want to execute on
+    cmdQueue = clCreateCommandQueue(context, devices[0], 0, &status);
     
-    //———————————————————————————————————————————————————
-    // STEP 4: Create a command queue
-    //———————————————————————————————————————————————————
+    //*STEP 5: Create device buffers
+    // Create a buffer object (d_A) that will contain the data from the host array
+    for(int i=0;i<NGRAM;i++)
+    {
+        buffer = clCreateBuffer(
+                                context,
+                                CL_MEM_READ_ONLY,
+                                DATASIZE,
+                                NULL,
+                                &status);
+    }
+    // Create a buffer object (d_C) with enough space to hold the output data
+    bufferOut = clCreateBuffer(context, CL_MEM_READ_WRITE, DATASIZE, NULL, &status);
     
-    // Create a command queue using clCreateCommandQueue(),
-    // and associate it with the device you want to execute
-    // on
-    cmdQueue = clCreateCommandQueue(
-                                    context,
-                                    devices[0],
-                                    0,
-                                    &status);
     
-    //———————————————————————————————————————————————————
-    // STEP 5: Create device buffers
-    //———————————————————————————————————————————————————
+    //*STEP 6: Write host data to input and output buffers
+    writeDataIntoBuffer();
+    status = clEnqueueWriteBuffer(cmdQueue, bufferOut, CL_FALSE, 0, DATASIZE, out, 0, NULL, NULL);
     
-    // Use clCreateBuffer() to create a buffer object (d_A)
-    // that will contain the data from the host array
-    for(int i=0;i<NGRAM;i++){
-        buffer[i] = clCreateBuffer(
-                                   context,
-                                   CL_MEM_READ_ONLY,
-                                   DATASIZE,
-                                   NULL,
-                                   &status);
+    
+    //*STEP 7: Create and compile the program
+    // Create a program using clCreateProgramWithSource()
+    program = clCreateProgramWithSource(context, 1, (const char**)&programSource, NULL, &status);
+    // Build (compile) the program for the devices with clBuildProgram()
+    status = clBuildProgram(program, numDevices, devices, NULL, NULL, NULL);
+    
+    //*STEP 8: Create the kernel
+    // Use clCreateKernel() to create a kernel from the
+    // vector addition function (named "vecadd")
+    kernel = clCreateKernel(program, KERNAL_NAME, &status);
+    
+    // STEP 9: Set the kernel arguments
+    // Associate the input and output buffers with the kernel
+    status = clSetKernelArg(kernel,
+                            0,                          //Argument position
+                            sizeof(cl_mem),
+                            &items);                    //TODO: change input based on kernal
+    
+    status = clSetKernelArg(kernel,
+                            1,                          //Argument position
+                            sizeof(cl_mem),
+                            &bufferOut);
+    
+    // STEP 10: Configure the work-item structure
+    // Define an index space (global work size) of work items for execution
+    
+    // There are ’elements’ work-items
+    globalWorkSize[0] = DIMEN;
+    
+}
+
+/********************************************************************************************************************/
+void processFile(string filename)
+{
+    vector<string> path = ReadFile(filename);
+    std::vector<string>::const_iterator i;
+    for (i = path.begin(); i != path.end(); ++i)
+    {
+        string str = (string)*i;
+        string strWords[2];
+        int counter=0;
+        
+        for(int i=0; i<str.length(); i++)
+        {
+            if (str[i] == '\t')
+                counter++;
+            else
+                strWords[counter] += str[i];
+        }
+        
+        cout<<"Key is--"<<strWords[0]<<"\n";
+        news_type = strWords[0];
+        
+        initializeAssociativeMemory();
+        
+        cout<<"Value --"<<strWords[1]<<"\n\n";
+        
+#ifdef SPLIT_BY_SPACE
+        loadKernalBuffer_space(strWords[1]);
+#else
+        loadKernalBuffer_Ngram(strWords[1]);
+#endif
+    }
+}
+
+/********************************************************************************************************************/
+vector<string> ReadFile(string filename)
+{
+    ifstream inFile(filename);
+    vector<string> vecstr;
+    if (!inFile) {
+        cerr << "File -- "<<filename<<" --not found." << endl;
+        return vecstr;
     }
     
-    // Use clCreateBuffer() to create a buffer object (d_C)
-    // with enough space to hold the output data
-    bufferOut = clCreateBuffer(
-                             context,
-                             CL_MEM_WRITE_ONLY,
-                             DATASIZE,
-                             NULL,
-                             &status);
     
+    // Using getline() to read one line at a time.
+    string line;
+    while (getline(inFile, line)) {
+        if (line.empty()) continue;
+        
+        // Using istringstream to read the line into integers.
+        /*	istringstream iss(line);
+         int sum = 0, next = 0;
+         while (iss >> next) sum += next;
+         outFile << sum << endl;
+         */
+        
+        vecstr.push_back(line);
+    }
+    
+    inFile.close();
+    //	outFile.close();
+    return vecstr;
+}
+
+/********************************************************************************************************************/
+void loadKernalBuffer_Ngram(string data)
+{
+    for(int i = 0; i < data.length()-NGRAM+1; ++i)
+    {
+        for(int j=0; j < NGRAM; j++)
+        {
+            for(int k=0; k < DIMEN; k++)
+            {
+                items[k]=ITEM_MEMORY[data.at(i+j)][k];
+            }
+        }
+        //Load kernal arguments
+        //Run Kernal
+        cout<<data.substr(i,NGRAM);
+        cout<<"----";
+    }
+    //get output from kernal and put it to associative mem
+}
+
+/********************************************************************************************************************/
+void loadKernalBuffer_space(string str)
+{
+    //const char *str = data.c_str();
+    char * writable = new char[str.size()+1];
+    std::copy(str.begin(), str.end(), writable);
+    writable[str.size()] = '\0';
+    char * pch;
+    pch = strtok (writable," ");
+    while (pch != NULL) {
+        cout<<pch;
+        cout<<"----";
+        pch = strtok (NULL, " ");
+    }
+    
+    /*	for(unsigned int i = 0; i < data.length()-n+1; ++i) {
+     cout<<data.substr(i,n);
+     cout<<"----";
+     }*/
+}
+
+/********************************************************************************************************************/
+void writeDataIntoBuffer()
+{
     //———————————————————————————————————————————————————
     // STEP 6: Write host data to device buffers
     //———————————————————————————————————————————————————
     // Use clEnqueueWriteBuffer() to write input array A to
     // the device buffer bufferA
-    for(int i=0; i<NGRAM; i++){
-        status = clEnqueueWriteBuffer(
-                                      cmdQueue,
-                                      buffer[i],
+    //for(int i=0; i<NGRAM; i++)
+    {
+        status = clEnqueueWriteBuffer(cmdQueue,
+                                      buffer,
                                       CL_FALSE,
                                       0,
-                                      DATASIZE,
-                                      items[i],
+                                      DATASIZE*NGRAM,
+                                      items,
                                       0,
                                       NULL,
                                       NULL);
     }
-    
-    //———————————————————————————————————————————————————
-    // STEP 7: Create and compile the program
-    //———————————————————————————————————————————————————
-    // Create a program using clCreateProgramWithSource()
-    program = clCreateProgramWithSource(
-                                                   context,
-                                                   1,
-                                                   (const char**)&programSource,
-                                                   NULL,
-                                                   &status);
-    
-    // Build (compile) the program for the devices with
-    // clBuildProgram()
-    status = clBuildProgram(
-                            program,
-                            numDevices,
-                            devices,
-                            NULL,
-                            NULL,
-                            NULL);
-    
-    //———————————————————————————————————————————————————
-    // STEP 8: Create the kernel
-    //———————————————————————————————————————————————————
-    
-    // Use clCreateKernel() to create a kernel from the
-    // vector addition function (named "vecadd")
-    kernel = clCreateKernel(program, "vecadd", &status);
-    
-    //———————————————————————————————————————————————————
-    // STEP 9: Set the kernel arguments
-    //———————————————————————————————————————————————————
-    // Associate the input and output buffers with the
-    // kernel
-    // using clSetKernelArg()
-    status = clSetKernelArg(
-                            kernel,
-                            0,
-                            sizeof(cl_mem),
-                            &items);
-    status = clSetKernelArg(
-                            kernel,
-                            1,
-                            sizeof(cl_mem),
-                            &bufferB);
-    status = clSetKernelArg(
-                            kernel,
-                            2,
-                            sizeof(cl_mem),
-                            &bufferC);
-    
-    //———————————————————————————————————————————————————
-    // STEP 10: Configure the work-item structure
-    //———————————————————————————————————————————————————
-    // Define an index space (global work size) of work
-    // items for
-    // execution. A workgroup size (local work size) is not
-    // required,
-    // but can be used.
-    size_t globalWorkSize[1];
-    
-    // There are ’elements’ work-items
-    globalWorkSize[0] = DIMEN;
-    
-    //———————————————————————————————————————————————————
-    // STEP 11: Enqueue the kernel for execution
-    //———————————————————————————————————————————————————
-    // Execute the kernel by using
-    // clEnqueueNDRangeKernel().
-    // ’globalWorkSize’ is the 1D dimension of the
-    // work-items
-    status = clEnqueueNDRangeKernel(
-                                    cmdQueue,
+}
+
+/********************************************************************************************************************/
+void runKernal()
+    {
+    // Enqueue the kernel for execution
+    status = clEnqueueNDRangeKernel(cmdQueue,
                                     kernel,
                                     1,
                                     NULL,
@@ -353,85 +385,47 @@ void test(){
                                     0,
                                     NULL,
                                     NULL);
-    
-        // Verify the output
-    bool result = true;
-    for (int i = 0; i < elements; i++) {
-        //printf("result: %d", C[i]);
-        if (C[i] != i + i) {
-            result = false;
-            break;
-        }
-    }
-    if (result) {
-        printf("Output for addition is correct\n");
-        printf(" ");
-        printf(" ");
-        printf(" ");
-        printf(" ");
-        getchar();
-    }
-    else {
-        printf("Output for addition is incorrect\n");
-    }
-    
-    
 }
 
-
+/********************************************************************************************************************/
 void addToAssociativeMemory(){
-    int *A = NULL;
-    A = (int*)malloc(DATASIZE);
-    vector<int> out;
-    
-    
-    //———————————————————————————————————————————————————
-    // STEP 12: Read the output buffer back to the host
-    //———————————————————————————————————————————————————
-    // Use clEnqueueReadBuffer() to read the OpenCL output
-    // buffer (bufferC)
-    // to the host output array (C)
-    clEnqueueReadBuffer(
-                        cmdQueue,
+    //Read the output buffer back to the host
+    clEnqueueReadBuffer(cmdQueue,
                         bufferOut,
                         CL_TRUE,
                         0,
                         DATASIZE,
-                        A,
+                        out,
                         0,
                         NULL,
                         NULL);
-    for(int i=0; i < sizeof(A); i++)
+    for(int i=0; i < sizeof(out); i++)
     {
-        out.push_back(A[i]);
+        ASSOCIATIVE_MEMORY[news_type][i] += out[i];
     }
-    ASSOCIATIVE_MEMORY[news_type] = out;
-    free(A);
-
 }
 
-
+/********************************************************************************************************************/
 void releaseMemory()
 {
-    //———————————————————————————————————————————————————
-    // STEP 13: Release OpenCL resources
-    //———————————————————————————————————————————————————
     // Free OpenCL resources
     clReleaseKernel(kernel);
     clReleaseProgram(program);
     clReleaseCommandQueue(cmdQueue);
-    clReleaseMemObject(bufferA);
-    clReleaseMemObject(bufferB);
-    clReleaseMemObject(bufferC);
+    clReleaseMemObject(buffer);
+    clReleaseMemObject(bufferOut);
     clReleaseContext(context);
     
     // Free host resources
-    free(A);
-    free(B);
-    free(C);
+    free(out);
+    free(items);
     free(platforms);
     free(devices);
 }
+
+
+
+
 
 
 
