@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <string>
+#include <math.h>
 #include "kernel.h"
 
 #ifdef _WIN32
@@ -18,11 +19,12 @@ using namespace std;
 
 #define NGRAM_3
 
-//#define PRINT_ITEM_MEMORY 0;                            //Prints item memory if defined
+#define PRINT_ITEM_MEMORY 0;                            //Prints item memory if defined
 //#define SPLIT_BY_SPACE;                               //Split input by space instead of using NGRAMS
 
-const int       DIMEN       = 10;                     //Vector dimension
+const int       DIMEN       = 4;                     //Vector dimension
 const int       NGRAM       = 2;                        //Ngram-characters read from the training and test files
+const int       PERCENT     = 100;                      //Percentage of training file to be processed;
 const size_t    DATASIZE    = sizeof(int) * DIMEN;
 const string    BASE_DIR    = "/Users/hariharanvenkatramanan/Desktop/OpenCL/Final/amc/amc/";
 const string    TRAIN_FILE  = "Train.txt";
@@ -31,6 +33,9 @@ const char *    kernel_NAME = "vecadd";
 
 int     *out = NULL;
 int     *items[NGRAM];
+int     successCount;
+int     failureCount;
+int     testCount;
 string  news_type;
 size_t  globalWorkSize[1];
 bool    trainingDone        = false;
@@ -84,8 +89,8 @@ int main()
     for (std::vector<int>::iterator it = ASSOCIATIVE_MEMORY["earn"].begin(); it != ASSOCIATIVE_MEMORY["earn"].end(); ++it)
         cout << '\t' << *it;
     cout << '\n';
-    
-  //  trainingDone = true;
+
+    trainingDone = true;
   //  processFile(TEST_FILE);
     
     
@@ -167,10 +172,6 @@ void kernelInitialize()
             out[j] = 0;
         }
     }
-    
-    cout<<"Out Size = "<<sizeof(out)<<"\n";
-    cout<<"items size "<<sizeof(items)<<"\n";
-    
     
     //*STEP 1: Initialize the platforms
     // Use clGetPlatformIDs() to retrieve the number of platforms
@@ -306,23 +307,35 @@ vector<string> ReadFile(string filename)
         return vecstr;
     }
     
+    size_t lines_count =0;
+    string linea;
+    ifstream inFile2(filename);
+    while (getline(inFile2 , linea))
+        ++lines_count;
+    inFile2.close();
+    
+    size_t lineCount = 0;
     // Using getline() to read one line at a time.
     string line;
-    while (getline(inFile, line)) {
-        if (line.empty()) continue;
-        
-        // Using istringstream to read the line into integers.
-        /*	istringstream iss(line);
-         int sum = 0, next = 0;
-         while (iss >> next) sum += next;
-         outFile << sum << endl;
-         */
-        
-        vecstr.push_back(line);
+    if(trainingDone)
+    {
+        while (getline(inFile, line)) {
+            if (line.empty()) continue;
+            vecstr.push_back(line);
+        }
     }
-    
+    else
+    {
+        while (getline(inFile, line) && (lineCount < ceil(lines_count*PERCENT/100))) {
+            if (line.empty()) continue;
+            ++lineCount;
+            vecstr.push_back(line);
+        }
+        cout<<"Number of lines in Training file  = "<<lines_count<<"\n";
+        cout<<"Number of lines used for training = "<<vecstr.size()<<"\n";
+    }
     inFile.close();
-    //	outFile.close();
+
     return vecstr;
 }
 
@@ -338,27 +351,26 @@ void loadkernelBuffer_Ngram(string data)
             cout <<"Char:"<<data.at(i+j)<<"\t";
             for(int k=0; k < DIMEN; k++)
             {
-                items[j][k]=ITEM_MEMORY[data.at(i+j)][k];
+                items[j][k]=ITEM_MEMORY[data.at(i+j)][(k+j) % DIMEN];     //Rotate and load it into memory
                 cout<<items[j][k]<<"\t";
             }
             cout << "\n";
         }
         cout << "-----------------------------\n";
-        //Load kernel arguments
-        writeDataIntoBuffer();
         
-        //Run kernel
-        runkernel();
-        readWriteOut();
-      //  addToAssociativeMemory();
+        writeDataIntoBuffer();          //Load kernel arguments
+        runkernel();                    //Run kernel
+        readWriteOut();                 //Read and re-initialize outbuffer to avoid data errors
+     
     }
     cout<<"\nDone\n\n";
-    //get output from kernel and put it to associative mem
+    
     if(trainingDone)
-        addToTestMap();
+        addToTestMap();                 //Add accumulated data to the Test Map
     else
-        addToAssociativeMemory();
-    resetOut();
+        addToAssociativeMemory();       //Add accumulated data to the Associative memory
+    
+    resetOut();                         //Reset the output buffer and out data
 }
 
 /********************************************************************************************************************/
